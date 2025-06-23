@@ -1,0 +1,31 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-gradient-to-br from-saffron-50 via-white to-lotus-50 bg-mandala;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-gradient-to-r from-saffron-500 to-vermillion-500 hover:from-saffron-600 hover:to-vermillion-600 text-white font-medium px-6 py-3 rounded-lg shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105;
+  }
+  
+  .btn-secondary {
+    @apply bg-white/80 backdrop-blur-sm hover:bg-white text-saffron-700 font-medium px-6 py-3 rounded-lg shadow-md hover:shadow-lg transition-all duration-300 border border-saffron-200;
+  }
+  
+  .card {
+    @apply bg-white/80 backdrop-blur-sm rounded-xl shadow-lg border border-saffron-100 p-6;
+  }
+  
+  .progress-bar {
+    @apply w-full bg-saffron-100 rounded-full h-2 overflow-hidden;
+  }
+  
+  .progress-fill {
+    @apply h-full bg-gradient-to-r from-saffron-500 to-vermillion-500 transition-all duration-300 ease-out;
+  }
+}
