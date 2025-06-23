@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { Upload, FileText, AlertCircle } from 'lucide-react';
+import { Upload, FileText, AlertCircle, CheckCircle } from 'lucide-react';
 
 interface UploadSectionProps {
   onFileUpload: (file: File) => void;
@@ -9,6 +9,7 @@ interface UploadSectionProps {
 export const UploadSection: React.FC<UploadSectionProps> = ({ onFileUpload, isProcessing }) => {
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
 
   const validateFile = (file: File): boolean => {
     const allowedTypes = ['.obj', '.stl', '.ply'];
@@ -49,6 +50,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({ onFileUpload, isPr
     if (files.length > 0) {
       const file = files[0];
       if (validateFile(file)) {
+        setUploadedFile(file);
         onFileUpload(file);
       }
     }
@@ -61,9 +63,18 @@ export const UploadSection: React.FC<UploadSectionProps> = ({ onFileUpload, isPr
     if (files && files.length > 0) {
       const file = files[0];
       if (validateFile(file)) {
+        setUploadedFile(file);
         onFileUpload(file);
       }
     }
+  };
+
+  const formatFileSize = (bytes: number): string => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
   return (
@@ -78,6 +89,8 @@ export const UploadSection: React.FC<UploadSectionProps> = ({ onFileUpload, isPr
           relative border-2 border-dashed rounded-xl p-8 text-center transition-all duration-300
           ${dragActive 
             ? 'border-saffron-500 bg-saffron-50' 
+            : uploadedFile && !isProcessing
+            ? 'border-green-400 bg-green-50'
             : 'border-saffron-200 hover:border-saffron-400 hover:bg-saffron-50/50'
           }
           ${isProcessing ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
@@ -96,20 +109,44 @@ export const UploadSection: React.FC<UploadSectionProps> = ({ onFileUpload, isPr
         />
         
         <div className="space-y-4">
-          <div className="w-16 h-16 bg-gradient-to-br from-saffron-500 to-vermillion-500 rounded-full flex items-center justify-center mx-auto">
-            <FileText className="w-8 h-8 text-white" />
+          <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto ${
+            uploadedFile && !isProcessing
+              ? 'bg-gradient-to-br from-green-500 to-green-600'
+              : 'bg-gradient-to-br from-saffron-500 to-vermillion-500'
+          }`}>
+            {uploadedFile && !isProcessing ? (
+              <CheckCircle className="w-8 h-8 text-white" />
+            ) : (
+              <FileText className="w-8 h-8 text-white" />
+            )}
           </div>
           
           <div>
-            <p className="text-lg font-medium text-gray-800 mb-2">
-              {dragActive ? 'Drop your file here' : 'Drag & drop your 3D model'}
-            </p>
-            <p className="text-gray-600 mb-4">
-              or <span className="text-saffron-600 font-medium">browse files</span>
-            </p>
-            <p className="text-sm text-gray-500">
-              Supports .OBJ, .STL, .PLY files up to 50MB
-            </p>
+            {uploadedFile && !isProcessing ? (
+              <>
+                <p className="text-lg font-medium text-green-800 mb-2">
+                  File uploaded successfully!
+                </p>
+                <p className="text-green-600 mb-2">
+                  {uploadedFile.name} ({formatFileSize(uploadedFile.size)})
+                </p>
+                <p className="text-sm text-gray-500">
+                  Click here to upload a different file
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-lg font-medium text-gray-800 mb-2">
+                  {dragActive ? 'Drop your file here' : 'Drag & drop your 3D model'}
+                </p>
+                <p className="text-gray-600 mb-4">
+                  or <span className="text-saffron-600 font-medium">browse files</span>
+                </p>
+                <p className="text-sm text-gray-500">
+                  Supports .OBJ, .STL, .PLY files up to 50MB
+                </p>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -121,19 +158,32 @@ export const UploadSection: React.FC<UploadSectionProps> = ({ onFileUpload, isPr
         </div>
       )}
       
-      <div className="mt-6 grid grid-cols-3 gap-4 text-center">
-        <div className="p-3 bg-saffron-50 rounded-lg">
-          <p className="text-sm font-medium text-saffron-800">.OBJ</p>
-          <p className="text-xs text-saffron-600">Wavefront</p>
+      <div className="mt-6">
+        <h3 className="text-sm font-medium text-gray-700 mb-3">Supported Formats</h3>
+        <div className="grid grid-cols-3 gap-4 text-center">
+          <div className="p-3 bg-saffron-50 rounded-lg border border-saffron-200">
+            <p className="text-sm font-medium text-saffron-800">.OBJ</p>
+            <p className="text-xs text-saffron-600">Wavefront</p>
+          </div>
+          <div className="p-3 bg-vermillion-50 rounded-lg border border-vermillion-200">
+            <p className="text-sm font-medium text-vermillion-800">.STL</p>
+            <p className="text-xs text-vermillion-600">Stereolithography</p>
+          </div>
+          <div className="p-3 bg-lotus-50 rounded-lg border border-lotus-200">
+            <p className="text-sm font-medium text-lotus-800">.PLY</p>
+            <p className="text-xs text-lotus-600">Polygon File</p>
+          </div>
         </div>
-        <div className="p-3 bg-vermillion-50 rounded-lg">
-          <p className="text-sm font-medium text-vermillion-800">.STL</p>
-          <p className="text-xs text-vermillion-600">Stereolithography</p>
-        </div>
-        <div className="p-3 bg-lotus-50 rounded-lg">
-          <p className="text-sm font-medium text-lotus-800">.PLY</p>
-          <p className="text-xs text-lotus-600">Polygon File</p>
-        </div>
+      </div>
+
+      <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+        <h4 className="text-sm font-medium text-blue-800 mb-2">How it works:</h4>
+        <ol className="text-xs text-blue-700 space-y-1">
+          <li>1. Upload your 3D model file</li>
+          <li>2. Our algorithm extracts the outer shell surface</li>
+          <li>3. Internal geometry is removed for optimization</li>
+          <li>4. Download the optimized .GLB file</li>
+        </ol>
       </div>
     </div>
   );

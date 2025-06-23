@@ -18,6 +18,7 @@ export interface ModelData {
   originalFile: File | null;
   optimizedUrl: string | null;
   downloadUrl: string | null;
+  fileId: string | null;
 }
 
 function App() {
@@ -30,7 +31,8 @@ function App() {
   const [modelData, setModelData] = useState<ModelData>({
     originalFile: null,
     optimizedUrl: null,
-    downloadUrl: null
+    downloadUrl: null,
+    fileId: null
   });
   
   const [storageUsed, setStorageUsed] = useState(0); // in MB
@@ -42,16 +44,11 @@ function App() {
       return;
     }
 
-    setModelData({ originalFile: file, optimizedUrl: null, downloadUrl: null });
-    setProcessingState({ isProcessing: true, progress: 0, stage: 'Uploading...' });
+    setModelData({ originalFile: file, optimizedUrl: null, downloadUrl: null, fileId: null });
+    setProcessingState({ isProcessing: true, progress: 10, stage: 'Uploading file...' });
 
     try {
-      // Simulate upload progress
-      for (let i = 0; i <= 20; i++) {
-        setProcessingState(prev => ({ ...prev, progress: i }));
-        await new Promise(resolve => setTimeout(resolve, 50));
-      }
-
+      // Step 1: Upload file
       const formData = new FormData();
       formData.append('file', file);
 
@@ -60,15 +57,16 @@ function App() {
         body: formData,
       });
 
-      if (!uploadResponse.ok) throw new Error('Upload failed');
-
-      setProcessingState({ isProcessing: true, progress: 30, stage: 'Optimizing mesh...' });
-
-      // Simulate processing progress
-      for (let i = 30; i <= 80; i++) {
-        setProcessingState(prev => ({ ...prev, progress: i }));
-        await new Promise(resolve => setTimeout(resolve, 100));
+      if (!uploadResponse.ok) {
+        const errorData = await uploadResponse.json();
+        throw new Error(errorData.detail || 'Upload failed');
       }
+
+      const uploadResult = await uploadResponse.json();
+      setProcessingState({ isProcessing: true, progress: 30, stage: 'File uploaded successfully...' });
+
+      // Step 2: Optimize mesh
+      setProcessingState({ isProcessing: true, progress: 40, stage: 'Optimizing mesh to outer shell...' });
 
       const optimizeResponse = await fetch('/api/optimize_mesh', {
         method: 'POST',
@@ -76,36 +74,60 @@ function App() {
         body: JSON.stringify({ filename: file.name }),
       });
 
-      if (!optimizeResponse.ok) throw new Error('Optimization failed');
+      if (!optimizeResponse.ok) {
+        const errorData = await optimizeResponse.json();
+        throw new Error(errorData.detail || 'Optimization failed');
+      }
 
-      setProcessingState({ isProcessing: true, progress: 90, stage: 'Generating download...' });
+      const optimizeResult = await optimizeResponse.json();
+      setProcessingState({ isProcessing: true, progress: 80, stage: 'Generating download link...' });
 
+      // Step 3: Prepare download
       const downloadResponse = await fetch('/api/download_glb', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filename: file.name }),
       });
 
-      if (!downloadResponse.ok) throw new Error('Download generation failed');
+      if (!downloadResponse.ok) {
+        const errorData = await downloadResponse.json();
+        throw new Error(errorData.detail || 'Download preparation failed');
+      }
 
       const blob = await downloadResponse.blob();
       const downloadUrl = URL.createObjectURL(blob);
 
-      setModelData(prev => ({ ...prev, downloadUrl }));
+      setModelData(prev => ({ 
+        ...prev, 
+        downloadUrl,
+        fileId: uploadResult.file_id 
+      }));
       setStorageUsed(prev => prev + (file.size / (1024 * 1024)));
-      setProcessingState({ isProcessing: false, progress: 100, stage: 'Complete!' });
+      setProcessingState({ isProcessing: false, progress: 100, stage: 'Optimization complete!' });
 
     } catch (error) {
       console.error('Processing error:', error);
       setProcessingState({ isProcessing: false, progress: 0, stage: 'Error occurred' });
-      alert('An error occurred during processing. Please try again.');
+      alert(`Processing failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
-  const clearStorage = () => {
-    setModelData({ originalFile: null, optimizedUrl: null, downloadUrl: null });
-    setStorageUsed(0);
-    setProcessingState({ isProcessing: false, progress: 0, stage: '' });
+  const clearStorage = async () => {
+    try {
+      // Clean up server-side files
+      await fetch('/api/cleanup', { method: 'DELETE' });
+      
+      // Clean up client-side state
+      if (modelData.downloadUrl) {
+        URL.revokeObjectURL(modelData.downloadUrl);
+      }
+      
+      setModelData({ originalFile: null, optimizedUrl: null, downloadUrl: null, fileId: null });
+      setStorageUsed(0);
+      setProcessingState({ isProcessing: false, progress: 0, stage: '' });
+    } catch (error) {
+      console.error('Cleanup error:', error);
+    }
   };
 
   return (

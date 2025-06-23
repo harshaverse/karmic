@@ -12,8 +12,11 @@ services:
       - /app/node_modules
     environment:
       - VITE_API_URL=http://localhost:8000
+      - NODE_ENV=development
     depends_on:
       - backend
+    networks:
+      - karmic-network
 
   backend:
     build:
@@ -27,7 +30,14 @@ services:
       - backend_processed:/app/processed
     environment:
       - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+    networks:
+      - karmic-network
 
 volumes:
   backend_uploads:
   backend_processed:
+
+networks:
+  karmic-network:
+    driver: bridge
