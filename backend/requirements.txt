@@ -4,8 +4,4 @@ python-multipart==0.0.6
 trimesh==4.0.5
 numpy==1.24.3
 scipy==1.11.4
-python-magic==0.4.27
 aiofiles==23.2.1
-open3d==0.18.0
-pymeshlab==2023.12.post1
-scikit-image==0.22.0
