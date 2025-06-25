@@ -44,6 +44,7 @@ function App() {
       return;
     }
 
+    // Reset previous state
     setModelData({ originalFile: file, optimizedUrl: null, downloadUrl: null, fileId: null });
     setProcessingState({ isProcessing: true, progress: 10, stage: 'Uploading file...' });
 
@@ -58,14 +59,21 @@ function App() {
       });
 
       if (!uploadResponse.ok) {
-        const errorData = await uploadResponse.json();
-        throw new Error(errorData.detail || 'Upload failed');
+        const errorText = await uploadResponse.text();
+        let errorMessage = 'Upload failed';
+        try {
+          const errorData = JSON.parse(errorText);
+          errorMessage = errorData.detail || errorMessage;
+        } catch {
+          errorMessage = errorText || errorMessage;
+        }
+        throw new Error(errorMessage);
       }
 
       const uploadResult = await uploadResponse.json();
       setProcessingState({ isProcessing: true, progress: 30, stage: 'File uploaded successfully...' });
 
-      // Step 2: Optimize mesh
+      // Step 2: Optimize mesh - automatically start optimization
       setProcessingState({ isProcessing: true, progress: 40, stage: 'Optimizing mesh to outer shell...' });
 
       const optimizeResponse = await fetch('/api/optimize_mesh', {
@@ -75,8 +83,15 @@ function App() {
       });
 
       if (!optimizeResponse.ok) {
-        const errorData = await optimizeResponse.json();
-        throw new Error(errorData.detail || 'Optimization failed');
+        const errorText = await optimizeResponse.text();
+        let errorMessage = 'Optimization failed';
+        try {
+          const errorData = JSON.parse(errorText);
+          errorMessage = errorData.detail || errorMessage;
+        } catch {
+          errorMessage = errorText || errorMessage;
+        }
+        throw new Error(errorMessage);
       }
 
       const optimizeResult = await optimizeResponse.json();
@@ -90,15 +105,24 @@ function App() {
       });
 
       if (!downloadResponse.ok) {
-        const errorData = await downloadResponse.json();
-        throw new Error(errorData.detail || 'Download preparation failed');
+        const errorText = await downloadResponse.text();
+        let errorMessage = 'Download preparation failed';
+        try {
+          const errorData = JSON.parse(errorText);
+          errorMessage = errorData.detail || errorMessage;
+        } catch {
+          errorMessage = errorText || errorMessage;
+        }
+        throw new Error(errorMessage);
       }
 
       const blob = await downloadResponse.blob();
       const downloadUrl = URL.createObjectURL(blob);
+      const optimizedUrl = downloadUrl; // Use the same URL for viewing
 
       setModelData(prev => ({ 
         ...prev, 
+        optimizedUrl,
         downloadUrl,
         fileId: uploadResult.file_id 
       }));
@@ -120,6 +144,9 @@ function App() {
       // Clean up client-side state
       if (modelData.downloadUrl) {
         URL.revokeObjectURL(modelData.downloadUrl);
+      }
+      if (modelData.optimizedUrl && modelData.optimizedUrl !== modelData.downloadUrl) {
+        URL.revokeObjectURL(modelData.optimizedUrl);
       }
       
       setModelData({ originalFile: null, optimizedUrl: null, downloadUrl: null, fileId: null });

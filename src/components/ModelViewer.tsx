@@ -47,11 +47,17 @@ const OptimizedModel: React.FC<{ url: string }> = ({ url }) => {
       // Ensure proper materials and lighting
       scene.traverse((child) => {
         if (child instanceof THREE.Mesh) {
-          child.material = new THREE.MeshStandardMaterial({
-            color: '#f19338',
-            metalness: 0.1,
-            roughness: 0.4,
-          });
+          if (!child.material || Array.isArray(child.material)) {
+            child.material = new THREE.MeshStandardMaterial({
+              color: '#f19338',
+              metalness: 0.1,
+              roughness: 0.4,
+            });
+          } else if (child.material instanceof THREE.MeshStandardMaterial) {
+            child.material.color.setHex(0xf19338);
+            child.material.metalness = 0.1;
+            child.material.roughness = 0.4;
+          }
           child.castShadow = true;
           child.receiveShadow = true;
         }
@@ -59,7 +65,45 @@ const OptimizedModel: React.FC<{ url: string }> = ({ url }) => {
     }
   }, [scene]);
 
-  return <primitive ref={modelRef} object={scene} scale={[2, 2, 2]} />;
+  return (
+    <primitive 
+      ref={modelRef} 
+      object={scene.clone()} 
+      scale={[1, 1, 1]} 
+      position={[0, 0, 0]}
+    />
+  );
+};
+
+const ModelLoader: React.FC<{ url: string }> = ({ url }) => {
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setError(null);
+  }, [url]);
+
+  if (error) {
+    return (
+      <Center>
+        <mesh>
+          <boxGeometry args={[2, 2, 2]} />
+          <meshStandardMaterial color="#ef4444" wireframe />
+        </mesh>
+      </Center>
+    );
+  }
+
+  return (
+    <Suspense fallback={
+      <Center>
+        <ModelPlaceholder />
+      </Center>
+    }>
+      <Center>
+        <OptimizedModel url={url} />
+      </Center>
+    </Suspense>
+  );
 };
 
 export const ModelViewer: React.FC<ModelViewerProps> = ({ 
@@ -68,12 +112,20 @@ export const ModelViewer: React.FC<ModelViewerProps> = ({
   downloadUrl 
 }) => {
   const [showWireframe, setShowWireframe] = useState(false);
+  const [viewerKey, setViewerKey] = useState(0);
+
+  // Force re-render when optimized URL changes
+  useEffect(() => {
+    if (optimizedUrl) {
+      setViewerKey(prev => prev + 1);
+    }
+  }, [optimizedUrl]);
 
   const handleDownload = () => {
-    if (downloadUrl) {
+    if (downloadUrl && originalFile) {
       const link = document.createElement('a');
       link.href = downloadUrl;
-      link.download = `${originalFile?.name.split('.')[0] || 'model'}_optimized.glb`;
+      link.download = `${originalFile.name.split('.')[0]}_optimized.glb`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -98,31 +150,23 @@ export const ModelViewer: React.FC<ModelViewerProps> = ({
         
         <div className="flex items-center space-x-3">
           {downloadUrl && (
-            <>
-              <button 
-                onClick={() => setShowWireframe(!showWireframe)}
-                className="btn-secondary flex items-center space-x-2"
-              >
-                <RotateCcw className="w-4 h-4" />
-                <span>{showWireframe ? 'Solid' : 'Wireframe'}</span>
-              </button>
-              
-              <button 
-                onClick={handleDownload}
-                className="btn-primary flex items-center space-x-2"
-              >
-                <Download className="w-4 h-4" />
-                <span>Download GLB</span>
-              </button>
-            </>
+            <button 
+              onClick={handleDownload}
+              className="btn-primary flex items-center space-x-2"
+            >
+              <Download className="w-4 h-4" />
+              <span>Download GLB</span>
+            </button>
           )}
         </div>
       </div>
       
       <div className="aspect-square bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl overflow-hidden border border-gray-200 relative">
         <Canvas 
+          key={viewerKey}
           camera={{ position: [5, 5, 5], fov: 50 }}
           shadows
+          gl={{ preserveDrawingBuffer: true }}
         >
           <ambientLight intensity={0.4} />
           <directionalLight 
@@ -135,25 +179,19 @@ export const ModelViewer: React.FC<ModelViewerProps> = ({
           <pointLight position={[-10, -10, -10]} intensity={0.3} />
           <Environment preset="studio" />
           
-          <Suspense fallback={
+          {optimizedUrl ? (
+            <ModelLoader url={optimizedUrl} />
+          ) : (
             <Center>
               <ModelPlaceholder />
             </Center>
-          }>
-            <Center>
-              {downloadUrl ? (
-                <OptimizedModel url={downloadUrl} />
-              ) : (
-                <ModelPlaceholder />
-              )}
-            </Center>
-          </Suspense>
+          )}
           
           <OrbitControls 
             enablePan={true}
             enableZoom={true}
             enableRotate={true}
-            autoRotate={!originalFile}
+            autoRotate={!optimizedUrl}
             autoRotateSpeed={1}
             minDistance={2}
             maxDistance={10}
