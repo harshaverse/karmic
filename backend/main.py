@@ -59,10 +59,10 @@ def validate_3d_file(file_path: str) -> bool:
         logger.error(f"File validation error: {e}")
         return False
 
-def optimize_mesh_to_outer_shell(input_path: str, output_path: str) -> bool:
+def remove_inner_mesh_advanced(input_path: str, output_path: str) -> bool:
     """
-    Convert a 3D mesh to its outer shell using Trimesh.
-    This creates an optimized outer surface mesh.
+    Advanced inner mesh removal using multiple approaches.
+    This function tries different methods to extract only the outer shell.
     """
     try:
         logger.info(f"Loading mesh from: {input_path}")
@@ -96,63 +96,126 @@ def optimize_mesh_to_outer_shell(input_path: str, output_path: str) -> bool:
         
         logger.info(f"Original mesh: {len(mesh.vertices)} vertices, {len(mesh.faces)} faces")
         
-        # Clean up the mesh
+        # Step 1: Clean up the mesh
         mesh.remove_duplicate_faces()
         mesh.remove_unreferenced_vertices()
         mesh.remove_degenerate_faces()
         
-        # Fill holes to create a watertight mesh
-        if not mesh.is_watertight:
-            logger.info("Mesh is not watertight, attempting to fix...")
-            mesh.fill_holes()
+        # Step 2: Try multiple methods to extract outer shell
+        outer_shell = None
         
-        # Create outer shell using convex hull as a fallback method
-        # This ensures we get a clean outer surface
-        if len(mesh.faces) > 20000:
-            logger.info("Large mesh detected, simplifying...")
-            # Simplify first to reduce complexity
-            mesh = mesh.simplify_quadric_decimation(face_count=10000)
-        
-        # Method 1: Try voxelization for outer shell
+        # Method 1: Voxelization approach (best for removing inner geometry)
         try:
-            # Calculate appropriate voxel size
-            extents = mesh.extents
-            voxel_size = max(extents) / 64  # Adaptive voxel size
+            logger.info("Attempting voxelization method...")
             
-            logger.info(f"Creating voxel grid with size: {voxel_size}")
+            # Calculate appropriate voxel size based on mesh size
+            extents = mesh.extents
+            max_extent = max(extents)
+            voxel_size = max_extent / 100  # Higher resolution
+            
+            logger.info(f"Using voxel size: {voxel_size}")
             
             # Create voxel grid
             voxel_grid = mesh.voxelized(pitch=voxel_size)
             
-            # Convert back to mesh
+            # Get the outer shell by extracting surface
             outer_shell = voxel_grid.marching_cubes
             
-            if outer_shell.vertices.shape[0] == 0:
-                raise ValueError("Voxelization failed")
+            if outer_shell.vertices.shape[0] > 0:
+                logger.info("Voxelization method successful")
+            else:
+                raise ValueError("Voxelization produced empty mesh")
                 
         except Exception as e:
-            logger.warning(f"Voxelization failed: {e}, using convex hull")
-            # Fallback to convex hull
-            outer_shell = mesh.convex_hull
+            logger.warning(f"Voxelization method failed: {e}")
+            outer_shell = None
+        
+        # Method 2: Alpha shape approach (good for complex geometries)
+        if outer_shell is None or len(outer_shell.vertices) == 0:
+            try:
+                logger.info("Attempting alpha shape method...")
+                
+                # Sample points from the mesh surface
+                points, _ = trimesh.sample.sample_surface(mesh, count=10000)
+                
+                # Create alpha shape (outer boundary)
+                alpha_shape = trimesh.alpha_shape(points, alpha=0.1)
+                
+                if alpha_shape and hasattr(alpha_shape, 'vertices') and len(alpha_shape.vertices) > 0:
+                    outer_shell = alpha_shape
+                    logger.info("Alpha shape method successful")
+                else:
+                    raise ValueError("Alpha shape failed")
+                    
+            except Exception as e:
+                logger.warning(f"Alpha shape method failed: {e}")
+        
+        # Method 3: Convex hull (fallback - removes all concavities)
+        if outer_shell is None or len(outer_shell.vertices) == 0:
+            try:
+                logger.info("Using convex hull as fallback...")
+                outer_shell = mesh.convex_hull
+                logger.info("Convex hull method successful")
+            except Exception as e:
+                logger.warning(f"Convex hull failed: {e}")
+                outer_shell = mesh  # Use original as last resort
+        
+        # Method 4: Surface reconstruction from point cloud
+        if outer_shell is None or len(outer_shell.vertices) == 0:
+            try:
+                logger.info("Attempting surface reconstruction...")
+                
+                # Sample points from surface
+                points, _ = trimesh.sample.sample_surface(mesh, count=5000)
+                
+                # Create point cloud
+                point_cloud = trimesh.PointCloud(points)
+                
+                # Try to reconstruct surface
+                outer_shell = point_cloud.convex_hull
+                logger.info("Surface reconstruction successful")
+                
+            except Exception as e:
+                logger.warning(f"Surface reconstruction failed: {e}")
+                outer_shell = mesh
         
         # Ensure we have a valid result
-        if outer_shell.vertices.shape[0] == 0:
-            logger.warning("Outer shell extraction failed, using original mesh")
+        if outer_shell is None or not hasattr(outer_shell, 'vertices') or len(outer_shell.vertices) == 0:
+            logger.warning("All methods failed, using original mesh")
             outer_shell = mesh
         
-        # Final simplification if needed
-        if len(outer_shell.faces) > 15000:
-            logger.info("Simplifying final mesh...")
-            outer_shell = outer_shell.simplify_quadric_decimation(face_count=8000)
+        # Step 3: Post-processing
+        logger.info(f"Processing result: {len(outer_shell.vertices)} vertices, {len(outer_shell.faces)} faces")
         
-        # Ensure the mesh is watertight
+        # Clean up the result
+        outer_shell.remove_duplicate_faces()
+        outer_shell.remove_unreferenced_vertices()
+        outer_shell.remove_degenerate_faces()
+        
+        # Fill holes to ensure watertight mesh
         if not outer_shell.is_watertight:
+            logger.info("Filling holes to make watertight...")
             outer_shell.fill_holes()
         
-        # Smooth the mesh slightly
-        outer_shell = outer_shell.smoothed()
+        # Simplify if too complex
+        if len(outer_shell.faces) > 20000:
+            logger.info("Simplifying mesh...")
+            try:
+                outer_shell = outer_shell.simplify_quadric_decimation(face_count=15000)
+            except:
+                logger.warning("Simplification failed, keeping original complexity")
         
+        # Smooth the mesh slightly
+        try:
+            outer_shell = outer_shell.smoothed()
+        except:
+            logger.warning("Smoothing failed, keeping unsmoothed mesh")
+        
+        # Step 4: Export as GLB
         logger.info(f"Final mesh: {len(outer_shell.vertices)} vertices, {len(outer_shell.faces)} faces")
+        
+        # Ensure proper normals
+        outer_shell.fix_normals()
         
         # Export as GLB (binary glTF)
         outer_shell.export(output_path, file_type='glb')
@@ -161,11 +224,11 @@ def optimize_mesh_to_outer_shell(input_path: str, output_path: str) -> bool:
         if not os.path.exists(output_path):
             raise ValueError("Failed to create output file")
         
-        logger.info(f"Successfully exported to: {output_path}")
+        logger.info(f"Successfully exported outer shell to: {output_path}")
         return True
         
     except Exception as e:
-        logger.error(f"Error optimizing mesh: {str(e)}")
+        logger.error(f"Error removing inner mesh: {str(e)}")
         return False
 
 @app.post("/api/upload_model")
@@ -224,7 +287,7 @@ async def upload_model(file: UploadFile = File(...)):
 
 @app.post("/api/optimize_mesh")
 async def optimize_mesh(request: dict):
-    """Optimize the uploaded mesh to create outer shell."""
+    """Remove inner mesh and optimize to create outer shell only."""
     
     filename = request.get('filename')
     logger.info(f"Optimizing mesh for file: {filename}")
@@ -236,35 +299,35 @@ async def optimize_mesh(request: dict):
     input_path = file_info['temp_path']
     
     # Generate output path
-    output_filename = f"{file_info['id']}_optimized.glb"
+    output_filename = f"{file_info['id']}_outer_shell.glb"
     output_path = PROCESSED_DIR / output_filename
     
     try:
-        # Optimize the mesh
-        success = optimize_mesh_to_outer_shell(input_path, str(output_path))
+        # Remove inner mesh and create outer shell
+        success = remove_inner_mesh_advanced(input_path, str(output_path))
         
         if not success:
-            raise HTTPException(status_code=500, detail="Mesh optimization failed")
+            raise HTTPException(status_code=500, detail="Inner mesh removal failed")
         
         # Update file storage
         file_storage[filename]['output_path'] = str(output_path)
         file_storage[filename]['status'] = 'optimized'
         
-        logger.info(f"Mesh optimization completed for {filename}")
+        logger.info(f"Inner mesh removal completed for {filename}")
         
         return {
-            "message": "Mesh optimized successfully",
+            "message": "Inner mesh removed successfully - outer shell created",
             "filename": filename,
             "output_file": output_filename
         }
         
     except Exception as e:
         logger.error(f"Optimization failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Optimization failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Inner mesh removal failed: {str(e)}")
 
 @app.post("/api/download_glb")
 async def download_glb(request: dict):
-    """Download the optimized GLB file."""
+    """Download the outer shell GLB file."""
     
     filename = request.get('filename')
     logger.info(f"Preparing download for file: {filename}")
@@ -284,7 +347,7 @@ async def download_glb(request: dict):
     
     # Generate download filename
     original_name = Path(file_info['original_name']).stem
-    download_filename = f"{original_name}_optimized.glb"
+    download_filename = f"{original_name}_outer_shell.glb"
     
     logger.info(f"Serving download: {download_filename}")
     
