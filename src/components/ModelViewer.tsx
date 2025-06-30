@@ -1,7 +1,7 @@
 import React, { Suspense, useRef, useEffect, useState } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Environment, Center, useGLTF } from '@react-three/drei';
-import { Download, Eye, Loader, RotateCcw } from 'lucide-react';
+import { Download, Eye, Loader } from 'lucide-react';
 import * as THREE from 'three';
 
 interface ModelViewerProps {
@@ -111,7 +111,6 @@ export const ModelViewer: React.FC<ModelViewerProps> = ({
   optimizedUrl, 
   downloadUrl 
 }) => {
-  const [showWireframe, setShowWireframe] = useState(false);
   const [viewerKey, setViewerKey] = useState(0);
 
   // Force re-render when optimized URL changes
